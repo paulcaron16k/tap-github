@@ -1,5 +1,8 @@
 """Classes to assist in authenticating to the GitHub API."""
 
+# This replaces .meltano/extractors/tap-github/venv/lib/python3.11/site-packages/tap_github/authenticator.py
+# It replaces extraction failure on rate limit exceeded with a wait for credits sleep
+
 import logging
 import time
 from datetime import datetime
@@ -56,6 +59,18 @@ class TokenRateLimit:
             return False
         return True
 
+    def time_to_valid(self) -> int:
+        """Compute time to wait for token to have credits
+
+        Returns
+            Seconds to wait for credits.
+        """
+        if self.rate_limit_reset is None:
+            # The self.rate_limit_buffer is not 0 and the self.rate_limit_reset is unknown
+            return 300
+        if self.rate_limit_reset > datetime.now().timestamp():
+            return self.rate_limit_reset - datetime.now().timestamp()
+        return 0
 
 def generate_jwt_token(
     github_app_id: str,
@@ -116,10 +131,13 @@ class GitHubTokenAuthenticator(APIAuthenticatorBase):
     def prepare_tokens(self) -> Dict[str, TokenRateLimit]:
         # Save GitHub tokens
         available_tokens: List[str] = []
+        if "oauth_token" in self._config:
+            available_tokens = available_tokens + [f'bearer {self._config["oauth_token"]}']
         if "auth_token" in self._config:
-            available_tokens = available_tokens + [self._config["auth_token"]]
+            available_tokens = available_tokens + [f'token {self._config["auth_token"]}']
         if "additional_auth_tokens" in self._config:
-            available_tokens = available_tokens + self._config["additional_auth_tokens"]
+            for item in self._config["additional_auth_tokens"]:
+                available_tokens = available_tokens + [f'token {item}']
         else:
             # Accept multiple tokens using environment variables GITHUB_TOKEN*
             env_tokens = [
@@ -128,10 +146,12 @@ class GitHubTokenAuthenticator(APIAuthenticatorBase):
                 if key.startswith("GITHUB_TOKEN")
             ]
             if len(env_tokens) > 0:
+                # TODO Reform env_tokens as f'token {value}'
                 self.logger.info(
                     f"Found {len(env_tokens)} 'GITHUB_TOKEN' environment variables for authentication."
                 )
-                available_tokens = env_tokens
+                for item in env_tokens:
+                    available_tokens = available_tokens + [f'token {item}']
 
         # Parse App level private key and generate a token
         if "GITHUB_APP_PRIVATE_KEY" in environ.keys():
@@ -152,7 +172,7 @@ class GitHubTokenAuthenticator(APIAuthenticatorBase):
                 app_token = generate_app_access_token(
                     github_app_id, github_private_key, github_installation_id or None
                 )
-                available_tokens = available_tokens + [app_token]
+                available_tokens = available_tokens + [f'token {app_token}']
 
         # Get rate_limit_buffer
         rate_limit_buffer = self._config.get("rate_limit_buffer", None)
@@ -164,7 +184,7 @@ class GitHubTokenAuthenticator(APIAuthenticatorBase):
                 response = requests.get(
                     url="https://api.github.com/rate_limit",
                     headers={
-                        "Authorization": f"token {token}",
+                        "Authorization": f"{token}",
                     },
                 )
                 response.raise_for_status()
@@ -205,11 +225,29 @@ class GitHubTokenAuthenticator(APIAuthenticatorBase):
         tokens_list = list(self.tokens_map.items())
         current_token = self.active_token.token if self.active_token else ""
         shuffle(tokens_list)
+        best_token = ""
+        shortest_wait = 0;
         for _, token_rate_limit in tokens_list:
+            self.logger.info(
+                f"get_next_auth_token RateLimit-Limit {token_rate_limit.rate_limit} RateLimit-Remaining {token_rate_limit.rate_limit_remaining} "
+                f"RateLimit-Used {token_rate_limit.rate_limit_used} RateLimit-Reset {token_rate_limit.rate_limit_reset} "
+                f" valid {token_rate_limit.is_valid()} time_to_valid {token_rate_limit.time_to_valid()}."
+            )
             if token_rate_limit.is_valid() and current_token != token_rate_limit.token:
                 self.active_token = token_rate_limit
                 self.logger.info(f"Switching to fresh auth token")
                 return
+            if token_rate_limit.time_to_valid() < shortest_wait or shortest_wait == 0:
+                shortest_wait = self.active_token.time_to_valid()
+                best_token = token_rate_limit
+
+        # TODO Add GITHUB_RATE_LIMIT_EXCEEDED_ACTION = error | wait to config
+        rle_action = self._config.get("rate_limit_exceeded_action", "wait")
+        if rle_action == 'wait':
+            self.logger.info(f"get_next_auth_token rate limit hit. Waiting for token credits {shortest_wait} seconds")
+            self.active_token = best_token
+            time.sleep(shortest_wait + 1)
+            return
 
         raise RuntimeError(
             "All GitHub tokens have hit their rate limit. Stopping here."
@@ -218,8 +256,7 @@ class GitHubTokenAuthenticator(APIAuthenticatorBase):
     def update_rate_limit(
         self, response_headers: requests.models.CaseInsensitiveDict
     ) -> None:
-        # If no token or only one token is available, return early.
-        if len(self.tokens_map) <= 1 or self.active_token is None:
+        if self.active_token is None:
             return
 
         self.active_token.update_rate_limit(response_headers)
@@ -238,7 +275,7 @@ class GitHubTokenAuthenticator(APIAuthenticatorBase):
             # Make sure that our token is still valid or update it.
             if not self.active_token.is_valid():
                 self.get_next_auth_token()
-            result["Authorization"] = f"token {self.active_token.token}"
+            result["Authorization"] = f"{self.active_token.token}"
         else:
             self.logger.info(
                 "No auth token detected. "

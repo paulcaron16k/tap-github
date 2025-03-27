@@ -15,8 +15,10 @@ plugins:
       kind: string
     - name: metrics_log_level
       kind: string
+    - name: oauth_token
+      kind: sensitive
     - name: auth_token
-      kind: password
+      kind: sensitive
     - name: additional_auth_tokens
       kind: array
     - name: rate_limit_buffer

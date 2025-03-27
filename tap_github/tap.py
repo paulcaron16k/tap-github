@@ -37,14 +37,22 @@ class TapGitHub(Tap):
         th.Property("metrics_log_level", th.StringType),
         # Authentication options
         th.Property(
+            "oauth_token",
+            th.StringType,
+            description="GitHub OAuth token to authenticate with.",
+            secret=True,
+        ),
+        th.Property(
             "auth_token",
             th.StringType,
             description="GitHub token to authenticate with.",
+            secret=True,
         ),
         th.Property(
             "additional_auth_tokens",
             th.ArrayType(th.StringType),
             description="List of GitHub tokens to authenticate with. Streams will loop through them when hitting rate limits.",
+            secret=True,
         ),
         th.Property(
             "rate_limit_buffer",
