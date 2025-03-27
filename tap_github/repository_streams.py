@@ -1449,12 +1449,14 @@ class PullRequestFilesStream(GitHubRestStream):
 
     def post_process(self, row: dict, context: Optional[Dict[str, str]] = None) -> dict:
         row = super().post_process(row, context)
-        if context is not None:
-            # Get PR ID from context
-            row["org"] = context["org"]
-            row["repo"] = context["repo"]
-            row["repo_id"] = context["repo_id"]
+        if context is not None and "pull_number" in context:
             row["pull_number"] = context["pull_number"]
+        #if context is not None:
+            ## Get PR ID from context
+            #row["org"] = context["org"]
+            #row["repo"] = context["repo"]
+            #row["repo_id"] = context["repo_id"]
+            #row["pull_number"] = context["pull_number"]
         if not row["sha"]:
             row["sha"] = sha1(b"" + row["file_name"] + "_" +row["status"] + "_"
                     + str(row["additions"]) + "_" + str(row["changes"])
@@ -1556,7 +1558,17 @@ class ReviewCommentsStream(GitHubRestStream):
         th.Property("side", th.StringType),
     ).to_dict()
 
-# TODO verify pull_number is set in record
+    def post_process(self, row: dict, context: Optional[Dict[str, str]] = None) -> dict:
+        row = super().post_process(row, context)
+        if context is not None and "pull_number" in context:
+            row["pull_number"] = context["pull_number"]
+        else:
+            # When all "*_url" properties are stripped, rows cannot be joined with the pull request
+            # "https://api.github.com/repos/{org}/{repo}/pulls/12
+            pnu_parts = row["pull_request_url"].rsplit("/pulls/")
+            row["pull_number"] = int(pnu_parts[1]) if len(pnu_parts) == 2 else 0;
+        return row
+
 
 class ContributorsStream(GitHubRestStream):
     """Defines 'Contributors' stream. Fetching User & Bot contributors."""
