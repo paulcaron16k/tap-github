@@ -1228,10 +1228,10 @@ class PullRequestsStream(GitHubRestStream):
                 "pull_number": record["number"],
             }
         return {
-            "pull_number": record["number"],
             "org": record["base"]["user"]["login"],
             "repo": record["base"]["repo"]["name"],
             "repo_id": record["base"]["repo"]["id"],
+            "pull_number": record["number"],
         }
 
     schema = th.PropertiesList(
@@ -1429,10 +1429,10 @@ class PullRequestFilesStream(GitHubRestStream):
 
     schema = th.PropertiesList(
         # Parent Keys
-        th.Property("pull_number", th.IntegerType),
-        th.Property("repo", th.StringType),
         th.Property("org", th.StringType),
+        th.Property("repo", th.StringType),
         th.Property("repo_id", th.IntegerType),
+        th.Property("pull_number", th.IntegerType),
         # Rest 
         th.Property("sha", th.StringType),
         th.Property("filename", th.StringType),
@@ -1455,13 +1455,11 @@ class PullRequestFilesStream(GitHubRestStream):
             row["repo"] = context["repo"]
             row["repo_id"] = context["repo_id"]
             row["pull_number"] = context["pull_number"]
-            row["pull_id"] = context["pull_id"]
         if not row["sha"]:
             row["sha"] = sha1(b"" + row["file_name"] + "_" +row["status"] + "_"
                     + str(row["additions"]) + "_" + str(row["changes"])
                     + "_" + str(row["deletions"])).hexdigest()
         return row
-
 
 
 class ReviewsStream(GitHubRestStream):
@@ -1474,10 +1472,10 @@ class ReviewsStream(GitHubRestStream):
 
     schema = th.PropertiesList(
         # Parent keys
-        th.Property("pull_number", th.IntegerType),
         th.Property("org", th.StringType),
         th.Property("repo", th.StringType),
         th.Property("repo_id", th.IntegerType),
+        th.Property("pull_number", th.IntegerType),
         # Rest
         th.Property("id", th.IntegerType),
         th.Property("node_id", th.StringType),
@@ -1500,6 +1498,12 @@ class ReviewsStream(GitHubRestStream):
         th.Property("author_association", th.StringType),
     ).to_dict()
 
+    def post_process(self, row: dict, context: Optional[Dict[str, str]] = None) -> dict:
+        row = super().post_process(row, context)
+        if context is not None and "pull_number" in context:
+            row["pull_number"] = context["pull_number"]
+        return row
+
 
 class ReviewCommentsStream(GitHubRestStream):
     name = "review_comments"
@@ -1514,6 +1518,7 @@ class ReviewCommentsStream(GitHubRestStream):
         th.Property("org", th.StringType),
         th.Property("repo", th.StringType),
         th.Property("repo_id", th.IntegerType),
+        th.Property("pull_number", th.IntegerType),
         # Rest
         th.Property("url", th.StringType),
         th.Property("pull_request_review_id", th.IntegerType),
@@ -1551,6 +1556,7 @@ class ReviewCommentsStream(GitHubRestStream):
         th.Property("side", th.StringType),
     ).to_dict()
 
+# TODO verify pull_number is set in record
 
 class ContributorsStream(GitHubRestStream):
     """Defines 'Contributors' stream. Fetching User & Bot contributors."""

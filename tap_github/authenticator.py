@@ -197,7 +197,10 @@ class GitHubTokenAuthenticator(APIAuthenticatorBase):
                 )
                 self.logger.warning(msg)
 
-        self.logger.info(f"Tap will run with {len(filtered_tokens)} auth tokens")
+        if len(filtered_tokens) > 0:
+            self.logger.info(f"Tap will run with {len(filtered_tokens)} auth tokens")
+        else:
+            self.logger.error(f"Extraction running with no valid auth tokens")
 
         # Create a dict of TokenRateLimit
         # TODO - separate app_token and add logic to refresh the token
