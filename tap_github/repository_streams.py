@@ -1452,7 +1452,7 @@ class PullRequestFilesStream(GitHubRestStream):
         if context is not None and "pull_number" in context:
             row["pull_number"] = context["pull_number"]
         if not row["sha"]:
-            row["sha"] = "fake" + sha1(b"" + row["file_name"] + "_" +row["status"] + "_"
+            row["sha"] = "fake" + sha1(b"" + row["filename"] + "_" +row["status"] + "_"
                     + str(row["additions"]) + "_" + str(row["changes"])
                     + "_" + str(row["deletions"])).hexdigest()
         return row
