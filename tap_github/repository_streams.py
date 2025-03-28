@@ -1451,14 +1451,8 @@ class PullRequestFilesStream(GitHubRestStream):
         row = super().post_process(row, context)
         if context is not None and "pull_number" in context:
             row["pull_number"] = context["pull_number"]
-        #if context is not None:
-            ## Get PR ID from context
-            #row["org"] = context["org"]
-            #row["repo"] = context["repo"]
-            #row["repo_id"] = context["repo_id"]
-            #row["pull_number"] = context["pull_number"]
         if not row["sha"]:
-            row["sha"] = sha1(b"" + row["file_name"] + "_" +row["status"] + "_"
+            row["sha"] = "fake" + sha1(b"" + row["file_name"] + "_" +row["status"] + "_"
                     + str(row["additions"]) + "_" + str(row["changes"])
                     + "_" + str(row["deletions"])).hexdigest()
         return row
